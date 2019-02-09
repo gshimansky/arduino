@@ -49,7 +49,7 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected");
   
-    // Printing the ESP IP address
+  // Printing the ESP IP address
   Serial.println(WiFi.localIP());
   Serial.println(F("BME280 test"));
 
