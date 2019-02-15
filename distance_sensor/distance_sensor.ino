@@ -21,7 +21,7 @@ enum {
   CAR_UNKNOWN = 0,
   CAR_ABSENT = 1,
   CAR_PRESENT = 2
-} new_car_presence, car_presence = CAR_UNKNOWN;
+} new_car_presence, last_changed_car_presence = CAR_UNKNOWN, car_presence = CAR_UNKNOWN;
 const String car_state_strings[] = {"UNKNOWN", "ABSENT", "PRESENT"};
 long car_state_change_millis = 0, last_distance_change = 0;
 
@@ -64,6 +64,25 @@ void setup() {
 
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
+  sendStatusMessage(USER_ID);
+}
+
+void sendStatusMessage(String chat_id) {
+  String reply = "Car is " + car_state_strings[car_presence] + ".\n"
+"Current threshold is " + String(distance_threshold) + " centimeters.\n";
+  if (car_state_change_millis != 0) {
+    long all_time = (millis() - car_state_change_millis) / 1000;
+    long seconds = all_time % 60;
+    all_time /= 60;
+    long minutes = all_time % 60;
+    all_time /= 60;
+    long hours = all_time % 24;
+    long days = all_time / 24;
+
+    reply += "Last change of state was " + String(days) + " days " +
+      String(hours) + ":" + String(minutes) + ":" + String(seconds) +" ago.";
+  }
+  bot.sendMessage(chat_id, reply, "");
 }
 
 void handleNewMessages(int numNewMessages) {
@@ -79,27 +98,24 @@ void handleNewMessages(int numNewMessages) {
       from_name = "Guest";
 
     if (text == "/status") {
-      String reply = "Car is " + car_state_strings[car_presence] + ".\n"
-"Current threshold is " + String(distance_threshold) + " centimeters.\n";
-      if (car_state_change_millis != 0)
-        reply += "Last change of state was " + String(millis() - car_state_change_millis) + " milliseconds ago.";
-      bot.sendMessage(chat_id, reply, "");
+      sendStatusMessage(chat_id);
       threshold_enter_mode = false;
     } else if (text == "/threshold") {
       bot.sendMessage(chat_id, "Enter threshold number in centimeters", "");
       threshold_enter_mode = true;
     } else if (text == "/start" || text == "/help") {
-      String keyboardJson = "[[\"/status\", \"/threshold\"],[\"/status\"]]";
+      String keyboardJson = "[[\"/status\", \"/threshold\"]]";
       String welcome = "Welcome to garage distance meathuring bot, " + from_name + ".\n"
-"/status : to get current distance\n";
+"/status : to get current distance\n"
 "/threshold : to set threshold when to light red light\n";
-      bot.sendMessage(chat_id, welcome, "Markdown");
+      bot.sendMessageWithReplyKeyboard(chat_id, welcome, "", keyboardJson, true);
       threshold_enter_mode = false;
     } else if (threshold_enter_mode) {
       int new_threshold;
       int ints = sscanf(text.c_str(), "%d", &new_threshold);
       if (ints == 1) {
-        bot.sendMessage(chat_id, "New threshold is " + String(new_threshold) + " centimeters", "");
+        bot.sendMessage(chat_id,
+          "New threshold is " + String(new_threshold) + " centimeters", "");
         distance_threshold = new_threshold;
       } else {
         bot.sendMessage(chat_id, "Entered text could not be parsed: " + text, "");
@@ -141,24 +157,27 @@ void loop() {
     new_car_presence = CAR_ABSENT;
   }
 
-  if (car_presence != new_car_presence) {
+  if (last_changed_car_presence != new_car_presence) {
     last_distance_change = millis();
-    if (last_distance_change - car_state_change_millis > car_presence_delay_ms) {
+    last_changed_car_presence = new_car_presence;
+  } else {
+    long cur_time = millis();
+    if ((cur_time - last_distance_change > car_presence_delay_ms) &&
+      (new_car_presence != car_presence)) {
       car_presence = new_car_presence;
-      car_state_change_millis = last_distance_change;
+      car_state_change_millis = cur_time;
+      Serial.println("Changing car status to " + car_state_strings[car_presence]);
       bot.sendMessage(USER_ID, "Car is now " + car_state_strings[car_presence], "");
     }
   }
 
   Serial.print(cm);
-  Serial.print("cm");
-  Serial.println();
+  Serial.println("cm");
 
   if (millis() > telegram_bot_lasttime + telegram_check_delay_ms)  {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
     while(numNewMessages) {
-      Serial.println("got response");
       handleNewMessages(numNewMessages);
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
