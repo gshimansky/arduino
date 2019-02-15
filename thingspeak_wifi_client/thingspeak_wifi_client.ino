@@ -11,7 +11,7 @@
 
 //#define BMP_SCK 13
 //#define BMP_MISO 12
-//#define BMP_MOSI 11 
+//#define BMP_MOSI 11
 //#define BMP_CS 10
 
 float t, h, p, pmm, dp;
@@ -25,7 +25,7 @@ Adafruit_BME280 bme; // I2C
 const char* server = "api.thingspeak.com";
 WiFiClient client;
 
-/**************************  
+/**************************
  *   S E T U P
  **************************/
 // only runs once on boot
@@ -39,16 +39,16 @@ void setup() {
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
-  
+
   WiFi.begin(ssid, password);
-  
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   Serial.println("");
   Serial.println("WiFi connected");
-  
+
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
   Serial.println(F("BME280 test"));
@@ -59,7 +59,7 @@ void setup() {
   }
 }
 
-  /**************************  
+/**************************
  *  L O O P
  **************************/
 void loop() {
@@ -70,7 +70,7 @@ void loop() {
 
 //    t = t*1.8+32.0;  // Convert to Farengeith
 //    dp = t-0.36*(100.0-h);
-    
+
     dtostrf(t, 5, 1, temperatureString);
     dtostrf(h, 5, 1, humidityString);
     dtostrf(pmm, 6, 1, pressureString);
@@ -86,7 +86,7 @@ void loop() {
     Serial.println(pressureString);
 //    Serial.print("Dew Point = ");
 //    Serial.println(dpString);
-    
+
     if (client.connect(server,80))  // "184.106.153.149" or api.thingspeak.com
     {
         String postStr = apiKey;
@@ -97,7 +97,7 @@ void loop() {
         postStr +="&field3=";
         postStr += String(pressureString);
         postStr += "\r\n\r\n";
-        
+
         client.print("POST /update HTTP/1.1\n");
         client.print("Host: api.thingspeak.com\n");
         client.print("Connection: close\n");
@@ -106,9 +106,9 @@ void loop() {
         client.print("Content-Length: ");
         client.print(postStr.length());
         client.print("\n\n");
-        client.print(postStr);    
+        client.print(postStr);
     }
-    client.stop(); 
-    //every 5 Min   
+    client.stop();
+    //every 5 Min
     delay(300000);
 }
