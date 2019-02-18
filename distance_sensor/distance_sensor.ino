@@ -126,11 +126,16 @@ void handleNewMessages(int numNewMessages) {
       int new_threshold;
       int ints = sscanf(text.c_str(), "%d", &new_threshold);
       if (ints == 1) {
-        bot.sendMessage(chat_id,
-          "New threshold is " + String(new_threshold) + " centimeters.", "");
-        distance_threshold = new_threshold;
-        EEPROM.put(distance_threshold_eeprom_address, distance_threshold);
-        EEPROM.commit();
+        if (chat_id == USER_ID) {
+          bot.sendMessage(chat_id,
+            "New threshold is " + String(new_threshold) + " centimeters.", "");
+          distance_threshold = new_threshold;
+          EEPROM.put(distance_threshold_eeprom_address, distance_threshold);
+          EEPROM.commit();
+        } else {
+          bot.sendMessage(chat_id, "You are not my master, " + from_name +
+            " so you cannot change threshold.", "");
+        }
       } else {
         bot.sendMessage(chat_id, "Entered text could not be parsed: " + text, "");
       }
