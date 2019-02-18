@@ -4,8 +4,10 @@
 #include <Wire.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
+#include <EEPROM.h>
 
 int distance_threshold = 140; // Distance in cm to turn on red light
+const int distance_threshold_eeprom_address = 0;
 const int trigPin = D0;
 const int echoPin = D1;
 const int redpin = D3;
@@ -31,7 +33,7 @@ UniversalTelegramBot bot(BOT_TOKEN, client);
 // Latest measured distance
 long duration, cm;
 long telegram_bot_lasttime;
-int val;
+long days, hours, minutes, seconds;
 
 void setup() {
   // Workaround for Arduino SSL bug
@@ -44,44 +46,54 @@ void setup() {
   pinMode(redpin, OUTPUT);
   pinMode(greenpin, OUTPUT);
 
+  EEPROM.begin(sizeof(distance_threshold));
+  EEPROM.get(distance_threshold_eeprom_address, distance_threshold);
+
   //Serial Port begin
   Serial.begin (9600);
   delay(10);
 
   // Connecting to WiFi network
-  Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
 
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println("\nWiFi connected");
 
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
   sendStatusMessage(USER_ID);
 }
 
-void sendStatusMessage(String chat_id) {
-  String reply = "Car is " + car_state_strings[car_presence] + ".\n"
-"Current threshold is " + String(distance_threshold) + " centimeters.\n";
-  if (car_state_change_millis != 0) {
-    long all_time = (millis() - car_state_change_millis) / 1000;
-    long seconds = all_time % 60;
-    all_time /= 60;
-    long minutes = all_time % 60;
-    all_time /= 60;
-    long hours = all_time % 24;
-    long days = all_time / 24;
+void getTime(long all_seconds, long &days, long &hours, long &minutes, long &seconds) {
+  seconds = all_seconds % 60;
+  all_seconds /= 60;
+  minutes = all_seconds % 60;
+  all_seconds /= 60;
+  hours = all_seconds % 24;
+  days = all_seconds / 24;
+}
 
+void sendStatusMessage(String chat_id) {
+  getTime(millis() / 1000, days, hours, minutes, seconds);
+
+  String reply = "Bot has been running for " + String(days) + " days " +
+      String(hours) + ":" + String(minutes) + ":" + String(seconds) + ".\n"
+      "Car is " + car_state_strings[car_presence] + ".\n"
+      "Current threshold is " + String(distance_threshold) + " centimeters.\n";
+
+  if (car_state_change_millis != 0) {
+    getTime((millis() - car_state_change_millis) / 1000, days, hours, minutes, seconds);
     reply += "Last change of state was " + String(days) + " days " +
-      String(hours) + ":" + String(minutes) + ":" + String(seconds) +" ago.";
+      String(hours) + ":" + String(minutes) + ":" + String(seconds) + " ago.\n";
   }
+  reply += "Last distance was " + String(cm) + " cm.";
   bot.sendMessage(chat_id, reply, "");
 }
 
@@ -106,8 +118,8 @@ void handleNewMessages(int numNewMessages) {
     } else if (text == "/start" || text == "/help") {
       String keyboardJson = "[[\"/status\", \"/threshold\"]]";
       String welcome = "Welcome to garage distance meathuring bot, " + from_name + ".\n"
-"/status : to get current distance\n"
-"/threshold : to set threshold when to light red light\n";
+        "/status : to get current distance\n"
+        "/threshold : to set threshold when to light red light\n";
       bot.sendMessageWithReplyKeyboard(chat_id, welcome, "", keyboardJson, true);
       threshold_enter_mode = false;
     } else if (threshold_enter_mode) {
@@ -115,8 +127,10 @@ void handleNewMessages(int numNewMessages) {
       int ints = sscanf(text.c_str(), "%d", &new_threshold);
       if (ints == 1) {
         bot.sendMessage(chat_id,
-          "New threshold is " + String(new_threshold) + " centimeters", "");
+          "New threshold is " + String(new_threshold) + " centimeters.", "");
         distance_threshold = new_threshold;
+        EEPROM.put(distance_threshold_eeprom_address, distance_threshold);
+        EEPROM.commit();
       } else {
         bot.sendMessage(chat_id, "Entered text could not be parsed: " + text, "");
       }
@@ -135,13 +149,13 @@ void loop() {
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
- 
+
   // Read the signal from the sensor: a HIGH pulse whose
   // duration is the time (in microseconds) from the sending
   // of the ping to the reception of its echo off of an object.
   pinMode(echoPin, INPUT);
   duration = pulseIn(echoPin, HIGH);
- 
+
   // Convert the time into a distance
   cm = (duration / 2) / 29.1;     // Divide by 29.1 or multiply by 0.0343
 
@@ -164,10 +178,17 @@ void loop() {
     long cur_time = millis();
     if ((cur_time - last_distance_change > car_presence_delay_ms) &&
       (new_car_presence != car_presence)) {
+      getTime((millis() - car_state_change_millis) / 1000, days, hours, minutes, seconds);
+      String timestr = " after " + String(days) + " days " +
+        String(hours) + ":" + String(minutes) + ":" + String(seconds) +
+        " of being " + car_state_strings[car_presence] + ".";
+
       car_presence = new_car_presence;
       car_state_change_millis = cur_time;
-      Serial.println("Changing car status to " + car_state_strings[car_presence]);
-      bot.sendMessage(USER_ID, "Car is now " + car_state_strings[car_presence], "");
+
+      Serial.println("Changing car status to " + car_state_strings[car_presence] + timestr);
+      bot.sendMessage(USER_ID, "Car is now " + car_state_strings[car_presence] + timestr +
+        " Car distance is " + String(cm) + " cm.", "");
     }
   }
 
