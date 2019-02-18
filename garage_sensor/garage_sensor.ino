@@ -3,7 +3,6 @@
 
 #include <Wire.h>
 #include <ESP8266WiFi.h>
-#include <AddrList.h>
 #include <WiFiClientSecure.h>
 
 WiFiClientSecure client;
@@ -31,19 +30,11 @@ void setup() {
 
   WiFi.begin(ssid, password);
 
-  for (bool configured = false; !configured;) {
-    for (auto addr : addrList)
-      if ((configured = !addr.isLocal()
-                        // && addr.isV6() // uncomment when IPv6 is mandatory
-                        // && addr.ifnumber() == STATION_IF
-          )) {
-        break;
-      }
-    Serial.print('.');
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    Serial.print(".");
   }
-
-  Serial.println("WiFi connected");
+  Serial.println("\nWiFi connected");
 
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
