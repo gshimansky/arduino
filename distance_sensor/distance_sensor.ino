@@ -8,7 +8,7 @@
 
 int distance_threshold = 140; // Distance in cm to turn on red light
 const int distance_threshold_eeprom_address = 0;
-const int distance_interval = 10; // Allow this many cm to stay from threshold in either direction
+const int presence_addition = 20; // Detect car at this distance plus threshold
 const int trigPin = D0;
 const int echoPin = D1;
 const int redpin = D3;
@@ -164,27 +164,41 @@ void loop() {
 
   // Convert the time into a distance
   cm = (duration / 2) / 29.1;     // Divide by 29.1 or multiply by 0.0343
-  int compare_cm = cm;
+  // Invoke car detection logic
+  carPresenceProcessing(cm);
+  Serial.print(cm);
+  Serial.println("cm");
 
-  // Adjust distance to interval
-  switch (car_presence) {
-    case CAR_PRESENT:
-      compare_cm -= distance_interval;
-      break;
-    case CAR_ABSENT:
-      compare_cm += distance_interval;
-      break;
+  if (millis() > telegram_bot_lasttime + telegram_check_delay_ms)  {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+
+    while(numNewMessages) {
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+
+    telegram_bot_lasttime = millis();
   }
 
-  if (compare_cm < distance_threshold) {
+  delay(measure_delay_ms);
+}
+
+void carPresenceProcessing(long cm) {
+  // Show signal where to stop
+  if (cm < distance_threshold) {
     // Show red
     analogWrite(redpin, 0);
     analogWrite(greenpin, 1024);
-    new_car_presence = CAR_PRESENT;
   } else {
     // Show green
     analogWrite(redpin, 1024);
     analogWrite(greenpin, 0);
+  }
+
+  // Detect car presence
+  if (cm < distance_threshold + presence_addition) {
+    new_car_presence = CAR_PRESENT;
+  } else {
     new_car_presence = CAR_ABSENT;
   }
 
@@ -208,20 +222,4 @@ void loop() {
         " Car distance is " + String(cm) + " cm.", "");
     }
   }
-
-  Serial.print(cm);
-  Serial.println("cm");
-
-  if (millis() > telegram_bot_lasttime + telegram_check_delay_ms)  {
-    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-
-    while(numNewMessages) {
-      handleNewMessages(numNewMessages);
-      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    }
-
-    telegram_bot_lasttime = millis();
-  }
-
-  delay(measure_delay_ms);
 }
