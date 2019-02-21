@@ -19,6 +19,7 @@
 const int SDAPin = D5;
 const int SCLPin = D4;
 
+long bme_sensor_lasttime;
 const int bme_check_delay_ms = 300000;
 Adafruit_BME280 bme; // I2C
 
@@ -53,6 +54,7 @@ long car_state_change_millis = 0, last_distance_change = 0;
 
 // Latest measured distance
 long duration, cm;
+long telegram_bot_lasttime;
 long days, hours, minutes, seconds;
 
 WiFiClientSecure secure_client;
@@ -178,8 +180,6 @@ void handleNewMessages(int numNewMessages) {
 }
 
 void loop() {
-  long telegram_bot_lasttime, bme_sensor_lasttime;
-
   // The sensor is triggered by a HIGH pulse of 10 or more microseconds.
   // Give a short LOW pulse beforehand to ensure a clean HIGH pulse:
   digitalWrite(trigPin, LOW);
@@ -304,6 +304,8 @@ void bmeSensorProcessing() {
     client.print(postStr.length());
     client.print("\n\n");
     client.print(postStr);
+  } else {
+    Serial.println("Failed to connect to server " + String(server));
   }
   client.stop();
 }
