@@ -2,9 +2,32 @@
 #include <UniversalTelegramBot.h>
 
 #include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include <EEPROM.h>
+
+//////////////////////////////////////
+// BME sensor section
+//////////////////////////////////////
+#ifdef BME280_ADDRESS
+#undef BME280_ADDRESS
+#define BME280_ADDRESS 0x76
+#endif
+
+const int SDAPin = D5;
+const int SCLPin = D4;
+
+const int bme_check_delay_ms = 300000;
+Adafruit_BME280 bme; // I2C
+
+const char* server = "api.thingspeak.com";
+WiFiClient client;
+
+//////////////////////////////////////
+// Distance measurement section
+//////////////////////////////////////
 
 int distance_threshold = 140; // Distance in cm to turn on red light
 const int distance_threshold_eeprom_address = 0;
@@ -28,18 +51,25 @@ enum {
 const String car_state_strings[] = {"UNKNOWN", "ABSENT", "PRESENT"};
 long car_state_change_millis = 0, last_distance_change = 0;
 
-WiFiClientSecure client;
-UniversalTelegramBot bot(BOT_TOKEN, client);
-
 // Latest measured distance
 long duration, cm;
-long telegram_bot_lasttime;
 long days, hours, minutes, seconds;
+
+WiFiClientSecure secure_client;
+UniversalTelegramBot bot(BOT_TOKEN, secure_client);
 
 void setup() {
   // Workaround for Arduino SSL bug
   // From here https://github.com/witnessmenow/Universal-Arduino-Telegram-Bot/issues/100#issuecomment-450145611
-  client.setFingerprint("BB DC 45 2A 07 E3 4A 71 33 40 32 DA BE 81 F7 72 6F 4A 2B 6B");
+  secure_client.setFingerprint("BB DC 45 2A 07 E3 4A 71 33 40 32 DA BE 81 F7 72 6F 4A 2B 6B");
+
+  // Set up I2C device pins
+  Wire.begin(SDAPin, SCLPin);
+
+  if (!bme.begin(BME280_ADDRESS)) {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    ESP.restart();
+  }
 
   //Define inputs and outputs
   pinMode(trigPin, OUTPUT);
@@ -148,6 +178,8 @@ void handleNewMessages(int numNewMessages) {
 }
 
 void loop() {
+  long telegram_bot_lasttime, bme_sensor_lasttime;
+
   // The sensor is triggered by a HIGH pulse of 10 or more microseconds.
   // Give a short LOW pulse beforehand to ensure a clean HIGH pulse:
   digitalWrite(trigPin, LOW);
@@ -169,7 +201,7 @@ void loop() {
   Serial.print(cm);
   Serial.println("cm");
 
-  if (millis() > telegram_bot_lasttime + telegram_check_delay_ms)  {
+  if (millis() > telegram_bot_lasttime + telegram_check_delay_ms) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
     while(numNewMessages) {
@@ -178,6 +210,11 @@ void loop() {
     }
 
     telegram_bot_lasttime = millis();
+  }
+
+  if (millis() > bme_sensor_lasttime + bme_check_delay_ms) {
+    bmeSensorProcessing();
+    bme_sensor_lasttime = millis();
   }
 
   delay(measure_delay_ms);
@@ -222,4 +259,51 @@ void carPresenceProcessing(long cm) {
         " Car distance is " + String(cm) + " cm.", "");
     }
   }
+}
+
+void bmeSensorProcessing() {
+  float t, h, p, pmm, dp;
+  char temperatureString[6];
+  char humidityString[6];
+  char pressureString[7];
+  char dpString[6];
+
+  h = bme.readHumidity();
+  t = bme.readTemperature();
+  p = bme.seaLevelForAltitude(ALTITUDE, bme.readPressure()); // Pressure in pascals
+  pmm = p * 0.0075f;  // Convert pascals to mmHg
+
+  dtostrf(t, 5, 1, temperatureString);
+  dtostrf(h, 5, 1, humidityString);
+  dtostrf(pmm, 6, 1, pressureString);
+
+  Serial.print("Temperature = ");
+  Serial.println(temperatureString);
+  Serial.print("Humidity = ");
+  Serial.println(humidityString);
+  Serial.print("Pressure = ");
+  Serial.println(pressureString);
+
+  if (client.connect(server, 80))
+  {
+    String postStr = apiKey;
+    postStr += "&field1=";
+    postStr += String(temperatureString);
+    postStr += "&field2=";
+    postStr += String(humidityString);
+    postStr += "&field3=";
+    postStr += String(pressureString);
+    postStr += "\r\n\r\n";
+
+    client.print("POST /update HTTP/1.1\n");
+    client.print("Host: api.thingspeak.com\n");
+    client.print("Connection: close\n");
+    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
+    client.print("Content-Type: application/x-www-form-urlencoded\n");
+    client.print("Content-Length: ");
+    client.print(postStr.length());
+    client.print("\n\n");
+    client.print(postStr);
+  }
+  client.stop();
 }

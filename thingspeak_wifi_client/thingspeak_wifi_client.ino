@@ -68,7 +68,7 @@ void loop() {
     h = bme.readHumidity();
     t = bme.readTemperature();
     p = bme.seaLevelForAltitude(ALTITUDE, bme.readPressure()); // Pressure in pascals
-    pmm = p * 0.0075f;  // Convert hectopascals to mmHg
+    pmm = p * 0.0075f;  // Convert pascals to mmHg
 
 //    t = t*1.8+32.0;  // Convert to Farengeith
 //    dp = t-0.36*(100.0-h);
