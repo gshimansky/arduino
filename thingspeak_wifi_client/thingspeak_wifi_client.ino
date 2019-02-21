@@ -33,6 +33,9 @@ void setup() {
   // Initializing serial port for debugging purposes
   Serial.begin(9600);
   delay(10);
+  // Default settings
+  // D1 - SCL
+  // D2 - SDA
 //  Wire.begin(D3, D4); // Make sure you have D3 & D4 hooked up to the BME280
 //  Wire.setClock(100000);
   // Connecting to WiFi network
