@@ -36,7 +36,7 @@ void setup() {
   // Default settings
   // D1 - SCL
   // D2 - SDA
-//  Wire.begin(D3, D4); // Make sure you have D3 & D4 hooked up to the BME280
+  Wire.begin(D1, D2, BME280_ADDRESS);
 //  Wire.setClock(100000);
   // Connecting to WiFi network
   Serial.println();
