@@ -31,7 +31,7 @@ WiFiClient client;
 // only runs once on boot
 void setup() {
   // Initializing serial port for debugging purposes
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(10);
   // Default settings
   // D1 - SCL
