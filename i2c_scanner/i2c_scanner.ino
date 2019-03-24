@@ -32,7 +32,13 @@ void setup()
 {
   Serial.begin(115200);
   Serial.println("SETUP!!!");
-  Wire.begin();
+#if defined(ARDUINO_ARCH_ESP32)
+  Wire.begin(SDA, SCL);
+#else
+  // D1 - SCL
+  // D2 - SDA
+  Wire.begin(D2, D1);
+#endif
 
   Serial.println("\nI2C Scanner");
 }
