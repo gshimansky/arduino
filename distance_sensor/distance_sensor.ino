@@ -1,7 +1,8 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
-#include <WiFiClient.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <EEPROM.h>
 
@@ -27,9 +28,6 @@ const int SCLPin = D4;
 long bme_sensor_lasttime;
 const int bme_check_delay_ms = 300000;
 Adafruit_BME280 bme; // I2C
-
-const char* server = "api.thingspeak.com";
-WiFiClient client;
 
 //////////////////////////////////////
 // Distance measurement section
@@ -413,30 +411,28 @@ void bmeSensorProcessing() {
   Serial.print("Pressure = ");
   Serial.println(pressureString);
 
-  if (client.connect(server, 80))
-  {
-    String postStr((char *)0);
-    postStr.reserve(256);
-    postStr += apiKey;
-    postStr += "&field1=";
-    postStr += temperatureString;
-    postStr += "&field2=";
-    postStr += humidityString;
-    postStr += "&field3=";
-    postStr += pressureString;
-    postStr += "\r\n\r\n";
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    bool connected = http.begin("http://api.thingspeak.com/update");
+    if (connected) {
+      String postStr((char *)0);
+      postStr += apiKey;
+      postStr +="&field1=";
+      postStr += temperatureString;
+      postStr +="&field2=";
+      postStr += humidityString;
+      postStr +="&field3=";
+      postStr += pressureString;
+      postStr += "\r\n\r\n";
 
-    client.print("POST /update HTTP/1.1\n");
-    client.print("Host: api.thingspeak.com\n");
-    client.print("Connection: close\n");
-    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
-    client.print("Content-Type: application/x-www-form-urlencoded\n");
-    client.print("Content-Length: ");
-    client.print(postStr.length());
-    client.print("\n\n");
-    client.print(postStr);
+      http.addHeader("X-THINGSPEAKAPIKEY", apiKey);
+      int result = http.POST((uint8_t *)postStr.c_str(), postStr.length());
+      Serial.print("Server result = ");
+      Serial.println(result);
+    } else {
+      Serial.println("Failed to connect to server api.thingspeak.com");
+    }
   } else {
-    Serial.println("Failed to connect to server " + String(server));
+    Serial.println("Not connected to WiFi");
   }
-  client.stop();
 }
