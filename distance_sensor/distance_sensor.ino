@@ -42,8 +42,8 @@ const int presence_addition = 20; // Detect car at this distance plus threshold
 #if defined(ARDUINO_ARCH_ESP32)
 const int trigPin = A4;  // PIN 32
 const int echoPin = A5;  // PIN 33
-const int redpin = A6;   // PIN 34
-const int greenpin = A7; // PIN 35
+const int redpin = 4;    // PIN  4
+const int greenpin = 5;  // PIN  5
 #else
 const int trigPin = D0;
 const int echoPin = D1;
@@ -94,7 +94,7 @@ void setup() {
 #endif
 
   // Set up I2C device pins
-  Wire.begin(SDAPin, SCLPin);
+  Wire.begin(SDAPin, SCLPin, BME280_ADDRESS);
 
   if (!bme.begin(BME280_ADDRESS)) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
