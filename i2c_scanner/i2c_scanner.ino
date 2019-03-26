@@ -35,8 +35,8 @@ void setup()
 #if defined(ARDUINO_ARCH_ESP32)
   Wire.begin(SDA, SCL);
 #else
-  // D1 - SCL
   // D2 - SDA
+  // D1 - SCL
   Wire.begin(D2, D1);
 #endif
 

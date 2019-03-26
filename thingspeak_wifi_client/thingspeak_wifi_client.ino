@@ -1,8 +1,13 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#if defined(ARDUINO_ARCH_ESP32)
 #include <WiFi.h>
 #include <HTTPClient.h>
+#else
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#endif
 #include "settings.hpp"
 
 #ifdef BME280_ADDRESS
@@ -39,9 +44,16 @@ void setup() {
   // Default settings
   // D2 - SDA
   // D1 - SCL
-  Wire.begin(D2, D1, BME280_ADDRESS);
+  Wire.begin(D2, D1);
 //  Wire.setClock(100000);
 #endif
+  Serial.println(F("BME280 test"));
+
+  if (!bme.begin(BME280_ADDRESS)) {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    ESP.restart();
+  }
+
   // Connecting to WiFi network
   Serial.println();
   Serial.print("Connecting to ");
@@ -58,12 +70,6 @@ void setup() {
 
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
-  Serial.println(F("BME280 test"));
-
-  if (!bme.begin(BME280_ADDRESS)) {
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1);
-  }
 }
 
 /**************************
