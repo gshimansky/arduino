@@ -73,7 +73,7 @@ long car_state_change_millis = 0, last_distance_change = 0;
 // Telegram communication section
 //////////////////////////////////////
 
-// Latest measured distance
+// Last time telegram server was checked for incoming messages
 long telegram_bot_lasttime;
 
 WiFiClientSecure secure_client;
@@ -132,6 +132,7 @@ void setup() {
   }
   Serial.println("\nWiFi connected");
 
+  WiFi.setAutoReconnect(true);
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
   sendStatusMessage(USER_ID, 0);
