@@ -298,7 +298,7 @@ void loop() {
   carPresenceProcessing(cm);
 
   // Telegram inpue message queue processing
-  if (millis() > telegram_bot_lasttime + telegram_check_delay_ms) {
+  if (millis() - telegram_bot_lasttime > telegram_check_delay_ms) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
     while(numNewMessages) {
@@ -313,7 +313,7 @@ void loop() {
   tmq.send_one();
 
   // Temperature message processing
-  if (millis() > bme_sensor_lasttime + bme_check_delay_ms) {
+  if (millis() - bme_sensor_lasttime > bme_check_delay_ms) {
     bmeSensorProcessing();
     bme_sensor_lasttime = millis();
   }
@@ -371,7 +371,7 @@ void carPresenceProcessing(long cm) {
     if ((cur_time - last_distance_change > car_presence_delay_ms) &&
       (new_car_presence != car_presence)) {
       long days, hours, minutes, seconds;
-      getTime((millis() - car_state_change_millis) / 1000, days, hours, minutes, seconds);
+      getTime((cur_time - car_state_change_millis) / 1000, days, hours, minutes, seconds);
       String timestr((char *)0);
       timestr.reserve(256);
       timestr += " after ";
@@ -463,9 +463,10 @@ void updateLCD(long cm) {
 
   // Show WiFi signal information
   lcd.setCursor(0, 0);
-  if (WiFi.status() != WL_CONNECTED) {
+  auto ws = WiFi.status();
+  if (ws != WL_CONNECTED) {
     lcd.print("WiFi: OFF(");
-    lcd.print(WiFi.status());
+    lcd.print(ws);
     lcd.print(")");
   } else {
     lcd.print("WiFi: ON(");
