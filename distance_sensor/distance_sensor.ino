@@ -471,7 +471,7 @@ void updateLCD(long cm) {
     lcd.print("WiFi: ON(");
     long rssi = WiFi.RSSI();
     lcd.print(rssi);
-    lcd.print("dbm)");
+    lcd.print("dBm)");
   }
 
   // Show distance
@@ -484,9 +484,10 @@ void updateLCD(long cm) {
 
   // Show time
   lcd.setCursor(0, 2);
-  lcd.print("Time: ");
+  lcd.print("Up: ");
   long days, hours, minutes, seconds;
-  getTime(millis() / 1000, days, hours, minutes, seconds);
+  long mi = millis();
+  getTime(mi / 1000, days, hours, minutes, seconds);
   lcd.print(days);
   lcd.print("d, ");
   lcd.print(hours);
@@ -494,4 +495,8 @@ void updateLCD(long cm) {
   lcd.print(minutes);
   lcd.print(":");
   lcd.print(seconds);
+
+  lcd.setCursor(0, 3);
+  lcd.print("Millis: ");
+  lcd.print(mi);
 }
