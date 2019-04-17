@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <EEPROM.h>
+#include <LiquidCrystal_PCF8574.h>
 
 #include "settings.hpp"
 #include "message_queue.hpp"
@@ -80,6 +81,13 @@ WiFiClientSecure secure_client;
 UniversalTelegramBot bot(BOT_TOKEN, secure_client);
 TelegramMessageQueue tmq(bot);
 
+//////////////////////////////////////
+// LCD display
+//////////////////////////////////////
+
+const int LCD_Address = 0x27;
+LiquidCrystal_PCF8574 lcd(LCD_Address);  // set the LCD address to 0x27
+
 void setup() {
   //Serial Port begin
   Serial.begin(115200);
@@ -133,6 +141,16 @@ void setup() {
   Serial.println("\nWiFi connected");
 
   WiFi.setAutoReconnect(true);
+
+  // initialize the lcd
+  lcd.begin(20, 4);
+  lcd.noAutoscroll();
+  lcd.setBacklight(255);
+  lcd.home();
+  lcd.clear();
+  lcd.noCursor();
+  lcd.display();
+
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
   sendStatusMessage(USER_ID, 0);
@@ -273,6 +291,8 @@ void loop() {
   long cm = (duration / 2) / 29.1;     // Divide by 29.1 or multiply by 0.0343
   Serial.print(cm);
   Serial.println("cm");
+
+  updateLCD(cm);
 
   // Invoke car detection logic
   carPresenceProcessing(cm);
@@ -436,4 +456,42 @@ void bmeSensorProcessing() {
   } else {
     Serial.println("Not connected to WiFi");
   }
+}
+
+void updateLCD(long cm) {
+  lcd.clear();
+
+  // Show WiFi signal information
+  lcd.setCursor(0, 0);
+  if (WiFi.status() != WL_CONNECTED) {
+    lcd.print("WiFi: OFF(");
+    lcd.print(WiFi.status());
+    lcd.print(")");
+  } else {
+    lcd.print("WiFi: ON(");
+    long rssi = WiFi.RSSI();
+    lcd.print(rssi);
+    lcd.print("dbm)");
+  }
+
+  // Show distance
+  lcd.setCursor(0, 1);
+  lcd.print("Car ");
+  lcd.print(car_state_strings[car_presence]);
+  lcd.print(": ");
+  lcd.print(cm);
+  lcd.print("cm");
+
+  // Show time
+  lcd.setCursor(0, 2);
+  lcd.print("Time: ");
+  long days, hours, minutes, seconds;
+  getTime(millis() / 1000, days, hours, minutes, seconds);
+  lcd.print(days);
+  lcd.print("d, ");
+  lcd.print(hours);
+  lcd.print(":");
+  lcd.print(minutes);
+  lcd.print(":");
+  lcd.print(seconds);
 }
