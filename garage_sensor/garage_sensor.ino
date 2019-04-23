@@ -185,7 +185,7 @@ void handleNewMessages(int numNewMessages, short mag) {
     if (text == "/status") {
       sendStatusMessage(std::move(chat_id), mag);
     } else if (text == "/start" || text == "/help") {
-      String keyboardJson = "[[\"/status\", \"/threshold\"]]";
+      String keyboardJson = "[[\"/status\"]]";
       String welcome((char *)0);
       welcome.reserve(256);
       welcome += "Welcome to garage door status bot, ";
