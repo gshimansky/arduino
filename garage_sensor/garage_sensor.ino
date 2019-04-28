@@ -115,6 +115,8 @@ void setup() {
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
 
+  sendStatusMessage(USER_ID, 0);
+
   pinMode(16, OUTPUT);
   digitalWrite(16, LOW);  // set GPIO16 low to reset OLED
   delay(50);
