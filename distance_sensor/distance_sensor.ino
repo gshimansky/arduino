@@ -57,7 +57,6 @@ const int channel_bits = 10;
 #endif
 
 const int measure_delay_ms = 250;
-const int telegram_check_delay_ms = 2000;
 const int car_presence_delay_ms = 30000;
 
 bool threshold_enter_mode;
@@ -76,6 +75,7 @@ long car_state_change_millis = 0, last_distance_change = 0;
 
 // Last time telegram server was checked for incoming messages
 long telegram_bot_lasttime;
+const int telegram_check_delay_ms = 2000;
 
 WiFiClientSecure secure_client;
 UniversalTelegramBot bot(BOT_TOKEN, secure_client);
@@ -171,7 +171,7 @@ void sendStatusMessage(String &&chat_id, int cm) {
 
   String reply((char *)0);
   reply.reserve(256);
-  reply += "Bot has been running for ";
+  reply += "Distance bot has been running for ";
   reply += days;
   reply += " days ";
   reply += hours;
@@ -292,6 +292,7 @@ void loop() {
   Serial.print(cm);
   Serial.println("cm");
 
+  // Update information on LCD display
   updateLCD(cm);
 
   // Invoke car detection logic
