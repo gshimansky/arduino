@@ -6,11 +6,13 @@
 #include "ThingSpeak.h"
 #include "settings.hpp"
 
-const int SENSOR_PIN PIN_A0;
+const int SENSOR_READ_PIN = PIN_A0;
+const int SENSOR_POWER_PIN = D5;
 
 WiFiClient client;
 
 void setup() {
+  pinMode(SENSOR_POWER_PIN, OUTPUT);
   //Serial Port begin
 //  Serial.begin(115200);
   Serial.begin(74880);
@@ -29,10 +31,12 @@ void setup() {
     Serial.println("\nWiFi connected");
   }
 
-  // put your main code here, to run repeatedly:
+  digitalWrite(SENSOR_POWER_PIN, HIGH);
+  delay(100);
   int val;
-  val = analogRead(0); //connect sensor to Analog 0
+  val = analogRead(SENSOR_READ_PIN); //connect sensor to Analog 0
   Serial.println(val); //print the value to serial port
+  digitalWrite(SENSOR_POWER_PIN, LOW);
 
   ThingSpeak.begin(client);
   // write to the ThingSpeak channel
@@ -46,6 +50,7 @@ void setup() {
 
   Serial.println("Going into deep sleep for 5 minutes");
   ESP.deepSleep(uint64_t(300) * 1000 * 1000); // 5 minutes
+  delay(500);
 }
 
 void loop() {
