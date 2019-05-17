@@ -3,11 +3,11 @@
 #include <Adafruit_BME280.h>
 #if defined(ARDUINO_ARCH_ESP32)
 #include <WiFi.h>
-#include <HTTPClient.h>
 #else
 #include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
 #endif
+#include "ThingSpeak.h"
+
 #include "settings.hpp"
 
 #ifdef BME280_ADDRESS
@@ -15,17 +15,7 @@
 #define BME280_ADDRESS 0x76
 #endif
 
-//#define BMP_SCK 13
-//#define BMP_MISO 12
-//#define BMP_MOSI 11
-//#define BMP_CS 10
-
-float t, h, p, pmm, dp;
-char temperatureString[6];
-char humidityString[6];
-char pressureString[7];
-char dpString[6];
-
+WiFiClient client;
 Adafruit_BME280 bme; // I2C
 
 /**************************
@@ -54,76 +44,68 @@ void setup() {
     ESP.restart();
   }
 
-  // Connecting to WiFi network
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected");
-
-  // Printing the ESP IP address
-  Serial.println(WiFi.localIP());
+  reconnect();
 }
 
 /**************************
  *  L O O P
  **************************/
 void loop() {
-    h = bme.readHumidity();
-    t = bme.readTemperature();
-    p = bme.seaLevelForAltitude(ALTITUDE, bme.readPressure()); // Pressure in pascals
-    pmm = p * 0.0075f;  // Convert pascals to mmHg
+  float t, h, p;
+  h = bme.readHumidity();
+  t = bme.readTemperature();
+  p = bme.seaLevelForAltitude(ALTITUDE, bme.readPressure()) * 0.0075f;  // Convert pascals to mmHg
 
 //    t = t*1.8+32.0;  // Convert to Farengeith
 //    dp = t-0.36*(100.0-h);
 
-    dtostrf(t, 5, 1, temperatureString);
-    dtostrf(h, 5, 1, humidityString);
-    dtostrf(pmm, 6, 1, pressureString);
-
-//    dtostrf(dp, 5, 1, dpString);
-    delay(10000);
-
-    Serial.print("Temperature = ");
-    Serial.println(temperatureString);
-    Serial.print("Humidity = ");
-    Serial.println(humidityString);
-    Serial.print("Pressure = ");
-    Serial.println(pressureString);
+  Serial.print("Temperature = ");
+  Serial.println(t);
+  Serial.print("Humidity = ");
+  Serial.println(h);
+  Serial.print("Pressure = ");
+  Serial.println(p);
 //    Serial.print("Dew Point = ");
 //    Serial.println(dpString);
 
-    if (WiFi.status() == WL_CONNECTED) {
-      HTTPClient http;
-      bool connected = http.begin("http://api.thingspeak.com/update");
-      if (connected) {
-        String postStr((char *)0);
-        postStr += apiKey;
-        postStr +="&field1=";
-        postStr += temperatureString;
-        postStr +="&field2=";
-        postStr += humidityString;
-        postStr +="&field3=";
-        postStr += pressureString;
-        postStr += "\r\n\r\n";
+  if (WiFi.status() != WL_CONNECTED) {
+    reconnect();
+  }
 
-        http.addHeader("X-THINGSPEAKAPIKEY", apiKey);
-        int result = http.POST((uint8_t *)postStr.c_str(), postStr.length());
-        Serial.print("Server result = ");
-        Serial.println(result);
-      } else {
-        Serial.println("Failed to connect to server api.thingspeak.com");
-      }
-    } else {
-      Serial.println("Not connected to WiFi");
+  ThingSpeak.begin(client);
+  ThingSpeak.setField(1, t);
+  ThingSpeak.setField(2, h);
+  ThingSpeak.setField(3, p);
+
+  int x = ThingSpeak.writeFields(channelID, apiKey);
+  if(x == 200){
+    Serial.println("Channel update successful.");
+  }
+  else{
+    Serial.println("Problem updating channel. HTTP error code " + String(x));
+  }
+
+  //every 5 Min
+  delay(300000);
+}
+
+void reconnect() {
+  // Connecting to WiFi network
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  long start_time = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - start_time > 5 * 60 * 1000) {
+      Serial.println("No connection in 5 minutes, trying to restart");
+      ESP.restart();
     }
-    //every 5 Min
-    delay(300000);
+  }
+  Serial.println("Connected!");
+  // Printing the ESP IP address
+  Serial.println(WiFi.localIP());
 }
