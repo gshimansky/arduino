@@ -2,10 +2,10 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <EEPROM.h>
 #include <LiquidCrystal_PCF8574.h>
+#include <ThingSpeak.h>
 
 #include "settings.hpp"
 #include "message_queue.hpp"
@@ -26,8 +26,9 @@ const int SDAPin = D5;
 const int SCLPin = D4;
 #endif
 
-long bme_sensor_lasttime;
+unsigned long bme_sensor_lasttime;
 const int bme_check_delay_ms = 300000;
+WiFiClient client;
 Adafruit_BME280 bme; // I2C
 
 //////////////////////////////////////
@@ -67,14 +68,14 @@ enum {
   CAR_PRESENT = 2
 } new_car_presence, last_changed_car_presence = CAR_UNKNOWN, car_presence = CAR_UNKNOWN;
 const String car_state_strings[] = {"UNKNOWN", "ABSENT", "PRESENT"};
-long car_state_change_millis = 0, last_distance_change = 0;
+unsigned long car_state_change_millis = 0, last_distance_change = 0;
 
 //////////////////////////////////////
 // Telegram communication section
 //////////////////////////////////////
 
 // Last time telegram server was checked for incoming messages
-long telegram_bot_lasttime;
+unsigned long telegram_bot_lasttime;
 const int telegram_check_delay_ms = 2000;
 
 WiFiClientSecure secure_client;
@@ -127,20 +128,7 @@ void setup() {
   EEPROM.begin(sizeof(distance_threshold));
   EEPROM.get(distance_threshold_eeprom_address, distance_threshold);
 
-  // Connecting to WiFi network
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected");
-
-  WiFi.setAutoReconnect(true);
+  reconnect();
 
   // initialize the lcd
   lcd.begin(20, 4);
@@ -156,7 +144,7 @@ void setup() {
   sendStatusMessage(USER_ID, 0);
 }
 
-void getTime(long all_seconds, long &days, long &hours, long &minutes, long &seconds) {
+void getTime(unsigned long all_seconds, unsigned long &days, unsigned long &hours, unsigned long &minutes, unsigned long &seconds) {
   seconds = all_seconds % 60;
   all_seconds /= 60;
   minutes = all_seconds % 60;
@@ -166,7 +154,7 @@ void getTime(long all_seconds, long &days, long &hours, long &minutes, long &sec
 }
 
 void sendStatusMessage(String &&chat_id, int cm) {
-  long days, hours, minutes, seconds;
+  unsigned long days, hours, minutes, seconds;
   getTime(millis() / 1000, days, hours, minutes, seconds);
 
   String reply((char *)0);
@@ -295,6 +283,10 @@ void loop() {
   // Update information on LCD display
   updateLCD(cm);
 
+  if (WiFi.status() != WL_CONNECTED) {
+    reconnect();
+  }
+
   // Invoke car detection logic
   carPresenceProcessing(cm);
 
@@ -368,10 +360,10 @@ void carPresenceProcessing(long cm) {
     last_distance_change = millis();
     last_changed_car_presence = new_car_presence;
   } else {
-    long cur_time = millis();
+    unsigned long cur_time = millis();
     if ((cur_time - last_distance_change > car_presence_delay_ms) &&
       (new_car_presence != car_presence)) {
-      long days, hours, minutes, seconds;
+      unsigned long days, hours, minutes, seconds;
       getTime((cur_time - car_state_change_millis) / 1000, days, hours, minutes, seconds);
       String timestr((char *)0);
       timestr.reserve(256);
@@ -411,51 +403,29 @@ void carPresenceProcessing(long cm) {
 }
 
 void bmeSensorProcessing() {
-  float t, h, p, pmm, dp;
-  char temperatureString[6];
-  char humidityString[6];
-  char pressureString[7];
-  char dpString[6];
-
+  float t, h, p;
   h = bme.readHumidity();
   t = bme.readTemperature();
-  p = bme.seaLevelForAltitude(ALTITUDE, bme.readPressure()); // Pressure in pascals
-  pmm = p * 0.0075f;  // Convert pascals to mmHg
-
-  dtostrf(t, 5, 1, temperatureString);
-  dtostrf(h, 5, 1, humidityString);
-  dtostrf(pmm, 6, 1, pressureString);
+  p = bme.seaLevelForAltitude(ALTITUDE, bme.readPressure()) * 0.0075f;  // Convert pascals to mmHg
 
   Serial.print("Temperature = ");
-  Serial.println(temperatureString);
+  Serial.println(t);
   Serial.print("Humidity = ");
-  Serial.println(humidityString);
+  Serial.println(h);
   Serial.print("Pressure = ");
-  Serial.println(pressureString);
+  Serial.println(p);
 
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    bool connected = http.begin("http://api.thingspeak.com/update");
-    if (connected) {
-      String postStr((char *)0);
-      postStr += apiKey;
-      postStr +="&field1=";
-      postStr += temperatureString;
-      postStr +="&field2=";
-      postStr += humidityString;
-      postStr +="&field3=";
-      postStr += pressureString;
-      postStr += "\r\n\r\n";
+  ThingSpeak.begin(client);
+  ThingSpeak.setField(1, t);
+  ThingSpeak.setField(2, h);
+  ThingSpeak.setField(3, p);
 
-      http.addHeader("X-THINGSPEAKAPIKEY", apiKey);
-      int result = http.POST((uint8_t *)postStr.c_str(), postStr.length());
-      Serial.print("Server result = ");
-      Serial.println(result);
-    } else {
-      Serial.println("Failed to connect to server api.thingspeak.com");
-    }
-  } else {
-    Serial.println("Not connected to WiFi");
+  int x = ThingSpeak.writeFields(channelID, apiKey);
+  if(x == 200){
+    Serial.println("Channel update successful.");
+  }
+  else{
+    Serial.println("Problem updating channel. HTTP error code " + String(x));
   }
 }
 
@@ -487,8 +457,8 @@ void updateLCD(long cm) {
   // Show time
   lcd.setCursor(0, 2);
   lcd.print("Up: ");
-  long days, hours, minutes, seconds;
-  long mi = millis();
+  unsigned long days, hours, minutes, seconds;
+  unsigned long mi = millis();
   getTime(mi / 1000, days, hours, minutes, seconds);
   lcd.print(days);
   lcd.print("d, ");
@@ -501,4 +471,27 @@ void updateLCD(long cm) {
   lcd.setCursor(0, 3);
   lcd.print("Millis: ");
   lcd.print(mi);
+}
+
+void reconnect() {
+  // Connecting to WiFi network
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  unsigned long start_time = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - start_time > 5 * 60 * 1000) {
+      Serial.println("No connection in 5 minutes, trying to restart");
+      ESP.restart();
+    }
+  }
+  Serial.println("Connected!");
+  // Printing the ESP IP address
+  Serial.println(WiFi.localIP());
+
+  WiFi.setAutoReconnect(true);
 }

@@ -39,14 +39,14 @@ enum {
   DOOR_OPEN = 1,
   DOOR_CLOSED = 2
 } new_door_state, last_changed_door_state = DOOR_UNKNOWN, door_state = DOOR_UNKNOWN;
-long door_state_change_millis = 0, last_state_change = 0;
+unsigned long door_state_change_millis = 0, last_state_change = 0;
 
 //////////////////////////////////////
 // Telegram communication section
 //////////////////////////////////////
 
 // Last time telegram server was checked for incoming messages
-long telegram_bot_lasttime;
+unsigned long telegram_bot_lasttime;
 const int telegram_check_delay_ms = 2000;
 
 WiFiClientSecure secure_client;
@@ -97,23 +97,7 @@ void setup() {
   if(error != 0) // If there is an error, print it out, although no way to get error with this sensor....
     Serial.println(compass.GetErrorText(error));
 
-  // Connecting to WiFi network
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected");
-
-  WiFi.setAutoReconnect(true);
-
-  // Printing the ESP IP address
-  Serial.println(WiFi.localIP());
+  reconnect();
 
   sendStatusMessage(USER_ID, 0);
 
@@ -126,7 +110,7 @@ void setup() {
   display.setFont(ArialMT_Plain_10);
 }
 
-void getTime(long all_seconds, long &days, long &hours, long &minutes, long &seconds) {
+void getTime(unsigned long all_seconds, unsigned long &days, unsigned long &hours, unsigned long &minutes, unsigned long &seconds) {
   seconds = all_seconds % 60;
   all_seconds /= 60;
   minutes = all_seconds % 60;
@@ -136,7 +120,7 @@ void getTime(long all_seconds, long &days, long &hours, long &minutes, long &sec
 }
 
 void sendStatusMessage(String &&chat_id, int mag) {
-  long days, hours, minutes, seconds;
+  unsigned long days, hours, minutes, seconds;
   getTime(millis() / 1000, days, hours, minutes, seconds);
 
   String reply((char *)0);
@@ -226,6 +210,10 @@ void loop() {
   // Update information on OLED display
   updateOLED(x, y, z);
 
+  if (WiFi.status() != WL_CONNECTED) {
+    reconnect();
+  }
+
   // Telegram inpue message queue processing
   if (millis() - telegram_bot_lasttime > telegram_check_delay_ms) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
@@ -257,10 +245,10 @@ void doorStateProcessing(short mag) {
     last_state_change = millis();
     last_changed_door_state = new_door_state;
   } else {
-    long cur_time = millis();
+    unsigned long cur_time = millis();
     if ((cur_time - last_state_change > door_state_delay_ms) &&
       (new_door_state != door_state)) {
-      long days, hours, minutes, seconds;
+      unsigned long days, hours, minutes, seconds;
       getTime((millis() - door_state_change_millis) / 1000, days, hours, minutes, seconds);
       String timestr((char *)0);
       timestr.reserve(256);
@@ -326,7 +314,7 @@ void updateOLED(short x, short y, short z) {
 
   String msgTime((char *)0);
   msgTime.reserve(64);
-  long days, hours, minutes, seconds;
+  unsigned long days, hours, minutes, seconds;
   getTime((millis() - door_state_change_millis) / 1000, days, hours, minutes, seconds);
   msgTime += "for ";
   msgTime += days;
@@ -363,4 +351,27 @@ void updateOLED(short x, short y, short z) {
   display.drawString(0, 48, msgMag2);
 
   display.display();
+}
+
+void reconnect() {
+  // Connecting to WiFi network
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  unsigned long start_time = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - start_time > 5 * 60 * 1000) {
+      Serial.println("No connection in 5 minutes, trying to restart");
+      ESP.restart();
+    }
+  }
+  Serial.println("Connected!");
+  // Printing the ESP IP address
+  Serial.println(WiFi.localIP());
+
+  WiFi.setAutoReconnect(true);
 }

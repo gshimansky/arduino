@@ -6,7 +6,7 @@
 #else
 #include <ESP8266WiFi.h>
 #endif
-#include "ThingSpeak.h"
+#include <ThingSpeak.h>
 
 #include "settings.hpp"
 
@@ -96,7 +96,7 @@ void reconnect() {
   Serial.println(ssid);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  long start_time = millis();
+  unsigned long start_time = millis();
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
