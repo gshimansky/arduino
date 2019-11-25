@@ -6,9 +6,20 @@
 #include <EEPROM.h>
 #include <LiquidCrystal_PCF8574.h>
 #include <ThingSpeak.h>
+#include "esp_system.h"
 
 #include "settings.hpp"
 #include "message_queue.hpp"
+
+//////////////////////////////////////
+// Watchdog
+//////////////////////////////////////
+
+#define TIMER_80MHZ_DIVIDER 80
+#define RESTART_TIMEOUT_US (30 * 1000 * 1000)
+#define WIFI_RESTART_TIMEOUT_MS (60 * 1000)
+hw_timer_t *watchdog_timer = NULL;
+void IRAM_ATTR resetModule();
 
 //////////////////////////////////////
 // BME sensor section
@@ -62,7 +73,7 @@ const int car_presence_delay_ms = 30000;
 
 bool threshold_enter_mode;
 // Current car presence state
-enum {
+enum car_status {
   CAR_UNKNOWN = 0,
   CAR_ABSENT = 1,
   CAR_PRESENT = 2
@@ -88,8 +99,29 @@ TelegramMessageQueue tmq(bot);
 
 const int LCD_Address = 0x27;
 LiquidCrystal_PCF8574 lcd(LCD_Address);  // set the LCD address to 0x27
+struct lcd_data {
+  wl_status_t wifi_status;
+  long wifi_rssi;
+  long cm;
+  car_status car_presence;
+  unsigned long days, hours, minutes, seconds;
+  float temp, hum;
+};
+lcd_data previous_data = {WL_IDLE_STATUS, 0,
+  0, CAR_UNKNOWN,
+  0, 0, 0, 0,
+  0.0f, 0.0f};
+#define DEGREE_SYMBOL 1
+int degree_symbol[] = {7, 5, 7, 0, 0, 0, 0, 0};
+void updateLCD(lcd_data &new_data);
 
 void setup() {
+  // Enable watchdog
+  watchdog_timer = timerBegin(0, TIMER_80MHZ_DIVIDER, true);
+  timerAttachInterrupt(watchdog_timer, resetModule, true);
+  timerAlarmWrite(watchdog_timer, RESTART_TIMEOUT_US, false);
+  timerAlarmEnable(watchdog_timer);
+
   //Serial Port begin
   Serial.begin(115200);
   delay(10);
@@ -138,6 +170,7 @@ void setup() {
   lcd.clear();
   lcd.noCursor();
   lcd.display();
+  lcd.createChar(DEGREE_SYMBOL, degree_symbol);
 
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
@@ -260,6 +293,10 @@ void handleNewMessages(int numNewMessages, long cm) {
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    reconnect();
+  }
+
   long duration;
   // The sensor is triggered by a HIGH pulse of 10 or more microseconds.
   // Give a short LOW pulse beforehand to ensure a clean HIGH pulse:
@@ -280,15 +317,30 @@ void loop() {
   Serial.print(cm);
   Serial.println("cm");
 
-  // Update information on LCD display
-  updateLCD(cm);
-
-  if (WiFi.status() != WL_CONNECTED) {
-    reconnect();
+  // Temperature message processing
+  if (millis() - bme_sensor_lasttime > bme_check_delay_ms) {
+    bmeSensorProcessing();
+    bme_sensor_lasttime = millis();
   }
 
   // Invoke car detection logic
   carPresenceProcessing(cm);
+
+  unsigned long days, hours, minutes, seconds;
+  unsigned long mi = millis();
+  getTime(mi / 1000, days, hours, minutes, seconds);
+  lcd_data d = {
+      WiFi.status(),
+      WiFi.RSSI(),
+      cm,
+      car_presence,
+      days, hours, minutes, seconds,
+      bme.readTemperature(),
+      bme.readHumidity(),
+  };
+  // Update information on LCD display
+  updateLCD(d);
+
 
   // Telegram inpue message queue processing
   if (millis() - telegram_bot_lasttime > telegram_check_delay_ms) {
@@ -305,11 +357,8 @@ void loop() {
   // Telegram output messages queue processing
   tmq.send_one();
 
-  // Temperature message processing
-  if (millis() - bme_sensor_lasttime > bme_check_delay_ms) {
-    bmeSensorProcessing();
-    bme_sensor_lasttime = millis();
-  }
+  // Reset watchdog
+  timerWrite(watchdog_timer, 0);
 
   delay(measure_delay_ms);
 }
@@ -429,48 +478,55 @@ void bmeSensorProcessing() {
   }
 }
 
-void updateLCD(long cm) {
-  lcd.clear();
-
+void updateLCD(lcd_data &new_data) {
   // Show WiFi signal information
-  lcd.setCursor(0, 0);
-  auto ws = WiFi.status();
-  if (ws != WL_CONNECTED) {
-    lcd.print("WiFi: OFF(");
-    lcd.print(ws);
-    lcd.print(")");
-  } else {
-    lcd.print("WiFi: ON(");
-    long rssi = WiFi.RSSI();
-    lcd.print(rssi);
-    lcd.print("dBm)");
+  if (new_data.wifi_rssi != previous_data.wifi_rssi || new_data.wifi_status != previous_data.wifi_status) {
+    lcd.setCursor(0, 0);
+    if (new_data.wifi_status != WL_CONNECTED) {
+      lcd.print("WiFi: OFF(");
+      lcd.print(new_data.wifi_status);
+      lcd.print(")         ");
+    } else {
+      lcd.print("WiFi: ON(");
+      lcd.print(new_data.wifi_rssi);
+      lcd.print("dBm)");
+    }
+    previous_data.wifi_status = new_data.wifi_status;
+    previous_data.wifi_rssi = new_data.wifi_rssi;
   }
 
   // Show distance
-  lcd.setCursor(0, 1);
-  lcd.print("Car ");
-  lcd.print(car_state_strings[car_presence]);
-  lcd.print(": ");
-  lcd.print(cm);
-  lcd.print("cm");
+  if (new_data.cm != previous_data.cm || new_data.car_presence != previous_data.car_presence) {
+    lcd.setCursor(0, 1);
+    lcd.printf("Car %7s: %4dcm", car_state_strings[new_data.car_presence], new_data.cm);
+    previous_data.car_presence = new_data.car_presence;
+    previous_data.cm = new_data.cm;
+  }
 
   // Show time
-  lcd.setCursor(0, 2);
-  lcd.print("Up: ");
-  unsigned long days, hours, minutes, seconds;
-  unsigned long mi = millis();
-  getTime(mi / 1000, days, hours, minutes, seconds);
-  lcd.print(days);
-  lcd.print("d, ");
-  lcd.print(hours);
-  lcd.print(":");
-  lcd.print(minutes);
-  lcd.print(":");
-  lcd.print(seconds);
+  if (new_data.seconds != previous_data.seconds ||
+    new_data.minutes != previous_data.minutes ||
+    new_data.hours != previous_data.hours ||
+    new_data.days != previous_data.days) {
+    lcd.setCursor(0, 2);
+    lcd.print("Up: ");
+    lcd.printf("Up: %dd, %02d:%02d:%02d", new_data.days, new_data.hours, new_data.minutes, new_data.seconds);
+    previous_data.days = new_data.days;
+    previous_data.hours = new_data.hours;
+    previous_data.minutes = new_data.minutes;
+    previous_data.seconds = new_data.seconds;
+  }
 
-  lcd.setCursor(0, 3);
-  lcd.print("Millis: ");
-  lcd.print(mi);
+  if (new_data.temp != previous_data.temp || new_data.hum != previous_data.hum) {
+    lcd.setCursor(0, 3);
+    lcd.printf("T %+2.1f", new_data.temp);
+    lcd.write(DEGREE_SYMBOL);
+    lcd.write('C');
+    lcd.setCursor(11, 3);
+    lcd.printf("H %3.1f%%", new_data.hum);
+    previous_data.temp = new_data.temp;
+    previous_data.hum = new_data.hum;
+  }
 }
 
 void reconnect() {
@@ -482,16 +538,21 @@ void reconnect() {
   WiFi.begin(ssid, password);
   unsigned long start_time = millis();
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    if (millis() - start_time > 5 * 60 * 1000) {
+    if (millis() - start_time > WIFI_RESTART_TIMEOUT_MS) {
       Serial.println("No connection in 5 minutes, trying to restart");
       ESP.restart();
     }
+    delay(500);
+    Serial.print(".");
   }
   Serial.println("Connected!");
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
 
   WiFi.setAutoReconnect(true);
+}
+
+void IRAM_ATTR resetModule(){
+    ets_printf("reboot\n");
+    ESP.restart();
 }
