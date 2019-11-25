@@ -509,7 +509,6 @@ void updateLCD(lcd_data &new_data) {
     new_data.hours != previous_data.hours ||
     new_data.days != previous_data.days) {
     lcd.setCursor(0, 2);
-    lcd.print("Up: ");
     lcd.printf("Up: %dd, %02d:%02d:%02d", new_data.days, new_data.hours, new_data.minutes, new_data.seconds);
     previous_data.days = new_data.days;
     previous_data.hours = new_data.hours;
