@@ -9,7 +9,7 @@ public:
   TelegramMessageQueue(UniversalTelegramBot &bot) : m_bot(bot)
   {}
 
-  void enqueue(String &&user_id, String &&msg, String &&keyboard_json = "", const bool resize = true) {
+  void enqueue(String &&user_id, String &&msg, const String &&keyboard_json = "", const bool resize = true) {
     m_list.emplace_back(std::move(user_id), std::move(msg), std::move(keyboard_json), resize);
   }
 
@@ -32,7 +32,7 @@ public:
 
 private:
   struct Message {
-    Message(String &&user_id, String &&msg, String &&keyboard_json, const bool resize) :
+    Message(String &&user_id, String &&msg, const String &&keyboard_json, const bool resize) :
       m_user_id(std::move(user_id)), m_msg(std::move(msg)), m_keyboard_json(std::move(keyboard_json)), m_resize(resize)
     {}
     String m_user_id, m_msg, m_keyboard_json;
