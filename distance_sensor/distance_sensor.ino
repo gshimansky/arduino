@@ -12,6 +12,16 @@
 #include "message_queue.hpp"
 
 //////////////////////////////////////
+// EEPROM
+//////////////////////////////////////
+
+const int eeprom_address = 0;
+struct eeprom_saved_state {
+  int distance_threshold;
+  int last_state;
+} eeprom_data = {140, 0};
+
+//////////////////////////////////////
 // Watchdog
 //////////////////////////////////////
 
@@ -46,8 +56,6 @@ Adafruit_BME280 bme; // I2C
 // Distance measurement section
 //////////////////////////////////////
 
-int distance_threshold = 140; // Distance in cm to turn on red light
-const int distance_threshold_eeprom_address = 0;
 const int presence_addition = 20; // Detect car at this distance plus threshold
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -157,8 +165,8 @@ void setup() {
   pinMode(greenpin, OUTPUT);
 #endif
 
-  EEPROM.begin(sizeof(distance_threshold));
-  EEPROM.get(distance_threshold_eeprom_address, distance_threshold);
+  EEPROM.begin(sizeof(eeprom_data));
+  EEPROM.get(eeprom_address, eeprom_data);
 
   reconnect();
 
@@ -203,8 +211,9 @@ void sendStatusMessage(String &&chat_id, int cm) {
   reply += ".\nCar is ";
   reply += car_state_strings[car_presence];
   reply += ".\nCurrent threshold is ";
-  reply += distance_threshold;
-  reply += " centimeters.\n";
+  reply += eeprom_data.distance_threshold;
+  reply += " centimeters.\nLast state = ";
+  reply += eeprom_data.last_state;
 
   if (car_state_change_millis != 0) {
     getTime((millis() - car_state_change_millis) / 1000, days, hours, minutes, seconds);
@@ -263,8 +272,8 @@ void handleNewMessages(int numNewMessages, long cm) {
           msg += " centimeters.";
           tmq.enqueue(std::move(chat_id), std::move(msg));
 
-          distance_threshold = new_threshold;
-          EEPROM.put(distance_threshold_eeprom_address, distance_threshold);
+          eeprom_data.distance_threshold = new_threshold;
+          EEPROM.put(eeprom_address, eeprom_data);
           EEPROM.commit();
         } else {
           String msg((char *)0);
@@ -293,6 +302,7 @@ void handleNewMessages(int numNewMessages, long cm) {
 }
 
 void loop() {
+  eeprom_data.last_state = 1;
   if (WiFi.status() != WL_CONNECTED) {
     reconnect();
   }
@@ -306,26 +316,31 @@ void loop() {
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
 
+  eeprom_data.last_state = 2;
   // Read the signal from the sensor: a HIGH pulse whose
   // duration is the time (in microseconds) from the sending
   // of the ping to the reception of its echo off of an object.
   pinMode(echoPin, INPUT);
   duration = pulseIn(echoPin, HIGH);
 
+  eeprom_data.last_state = 3;
   // Convert the time into a distance
   long cm = (duration / 2) / 29.1;     // Divide by 29.1 or multiply by 0.0343
   Serial.print(cm);
   Serial.println("cm");
 
+  eeprom_data.last_state = 4;
   // Temperature message processing
   if (millis() - bme_sensor_lasttime > bme_check_delay_ms) {
     bmeSensorProcessing();
     bme_sensor_lasttime = millis();
   }
 
+  eeprom_data.last_state = 5;
   // Invoke car detection logic
   carPresenceProcessing(cm);
 
+  eeprom_data.last_state = 6;
   unsigned long days, hours, minutes, seconds;
   unsigned long mi = millis();
   getTime(mi / 1000, days, hours, minutes, seconds);
@@ -341,25 +356,31 @@ void loop() {
   // Update information on LCD display
   updateLCD(d);
 
-
+  eeprom_data.last_state = 7;
   // Telegram inpue message queue processing
   if (millis() - telegram_bot_lasttime > telegram_check_delay_ms) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    eeprom_data.last_state = 8;
 
     while(numNewMessages) {
       handleNewMessages(numNewMessages, cm);
+      eeprom_data.last_state = 9;
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+      eeprom_data.last_state = 10;
     }
 
     telegram_bot_lasttime = millis();
   }
 
+  eeprom_data.last_state = 11;
   // Telegram output messages queue processing
   tmq.send_one();
 
+  eeprom_data.last_state = 12;
   // Reset watchdog
   timerWrite(watchdog_timer, 0);
 
+  eeprom_data.last_state = 13;
   delay(measure_delay_ms);
 }
 
@@ -367,7 +388,7 @@ void carPresenceProcessing(long cm) {
   // Show signal where to stop
 #if defined(ARDUINO_ARCH_ESP32)
 /*
-  if (cm < distance_threshold) {
+  if (cm < eeprom_data.distance_threshold) {
     // Show red
     ledcWrite(redpin, 0);
     ledcWrite(greenpin, 1023);
@@ -377,7 +398,7 @@ void carPresenceProcessing(long cm) {
     ledcWrite(greenpin, 0);
   }
 */
-  if (cm < distance_threshold) {
+  if (cm < eeprom_data.distance_threshold) {
     // Show red
     digitalWrite(redpin, HIGH);
     digitalWrite(greenpin, LOW);
@@ -387,7 +408,7 @@ void carPresenceProcessing(long cm) {
     digitalWrite(greenpin, HIGH);
   }
 #else
-  if (cm < distance_threshold) {
+  if (cm < eeprom_data.distance_threshold) {
     // Show red
     analogWrite(redpin, 0);
     analogWrite(greenpin, 1023);
@@ -399,7 +420,7 @@ void carPresenceProcessing(long cm) {
 #endif
 
   // Detect car presence
-  if (cm < distance_threshold + presence_addition) {
+  if (cm < eeprom_data.distance_threshold + presence_addition) {
     new_car_presence = CAR_PRESENT;
   } else {
     new_car_presence = CAR_ABSENT;
@@ -552,6 +573,9 @@ void reconnect() {
 }
 
 void IRAM_ATTR resetModule(){
-    ets_printf("reboot\n");
+    Serial.print("reboot, last state = \n");
+    Serial.println(eeprom_data.last_state);
+    EEPROM.put(eeprom_address, eeprom_data);
+    EEPROM.commit();
     ESP.restart();
 }
