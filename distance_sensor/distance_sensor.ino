@@ -559,7 +559,10 @@ void reconnect() {
   unsigned long start_time = millis();
   while (WiFi.status() != WL_CONNECTED) {
     if (millis() - start_time > WIFI_RESTART_TIMEOUT_MS) {
-      Serial.println("No connection in 5 minutes, trying to restart");
+      Serial.print("No connection in 5 minutes, trying to restart, last state = ");
+      Serial.println(eeprom_data.last_state);
+      EEPROM.put(eeprom_address, eeprom_data);
+      EEPROM.commit();
       ESP.restart();
     }
     delay(500);
@@ -573,7 +576,7 @@ void reconnect() {
 }
 
 void IRAM_ATTR resetModule(){
-    Serial.print("reboot, last state = \n");
+    Serial.print("reboot, last state = ");
     Serial.println(eeprom_data.last_state);
     EEPROM.put(eeprom_address, eeprom_data);
     EEPROM.commit();
